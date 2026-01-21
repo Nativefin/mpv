@@ -75,6 +75,12 @@ struct pl_video {
 
     // Color adjustment state
     struct mp_csp_equalizer_state *video_eq; // Manages brightness, contrast, hue, etc.
+
+    // Scaler configs storage (for map_scaler)
+    struct pl_filter_config scalers[SCALER_COUNT];
+
+    // Flip state (for OpenGL FBO orientation)
+    bool flipped;
 };
 
 /**
@@ -201,6 +207,16 @@ void pl_video_uninit(struct pl_video **p_ptr) {
 }
 
 /**
+ * @brief Sets whether the output should be flipped vertically.
+ * @param p The pl_video engine context.
+ * @param flipped True to flip the output (for OpenGL FBO orientation).
+ */
+void pl_video_set_flipped(struct pl_video *p, bool flipped) {
+    if (p)
+        p->flipped = flipped;
+}
+
+/**
  * @brief Updates the OSD overlays for the current video frame.
  * @param p The pl_video context.
  * @param res The OSD resolution.
@@ -321,6 +337,9 @@ static void update_overlays(struct pl_video *p, struct mp_osd_res res,
 void pl_video_render(struct pl_video *p, struct vo_frame *frame, pl_tex target_tex)
 {
     // Describe the target surface for libplacebo.
+    // When flipped (OpenGL FBO), swap y0 and y1 to flip the output vertically.
+    int crop_y0 = p->flipped ? p->current_dst.y1 : p->current_dst.y0;
+    int crop_y1 = p->flipped ? p->current_dst.y0 : p->current_dst.y1;
     struct pl_frame target_frame = {
         .num_planes = 1,
         .planes[0] = { .texture = target_tex, .components = 4, .component_mapping = {0,1,2,3} },
