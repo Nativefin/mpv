@@ -287,9 +287,16 @@ static void update_overlays(struct pl_video *p, struct mp_osd_res res,
             if (b->dw == 0 || b->dh == 0)
                 continue;
             uint32_t c = b->libass.color;
+
+            float src_y0 = !p->flipped ? b->src_y : b->src_y + b->h;
+            float src_y1 = !p->flipped ? b->src_y + b->h : b->src_y;
+
+            float dest_y0 = !p->flipped ? b->y : res.h - (b->y + b->dh);
+            float dest_y1 = !p->flipped ? b->y + b->dh : res.h - b->y;
+
             struct pl_overlay_part part = {
-                .src = { b->src_x, b->src_y, b->src_x + b->w, b->src_y + b->h },
-                .dst = { b->x, b->y, b->x + b->dw, b->y + b->dh },
+                .src = { b->src_x, src_y0, b->src_x + b->w, src_y1 },
+                .dst = { b->x, dest_y0, b->x + b->dw, dest_y1},
                 .color = {
                     (c >> 24) / 255.0f,
                     ((c >> 16) & 0xFF) / 255.0f,
