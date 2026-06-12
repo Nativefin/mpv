@@ -76,9 +76,6 @@ struct pl_video {
     // Color adjustment state
     struct mp_csp_equalizer_state *video_eq; // Manages brightness, contrast, hue, etc.
 
-    // Scaler configs storage (for map_scaler)
-    struct pl_filter_config scalers[SCALER_COUNT];
-
     // Flip state (for OpenGL FBO orientation)
     bool flipped;
 };
