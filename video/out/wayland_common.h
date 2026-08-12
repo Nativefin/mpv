@@ -46,6 +46,7 @@ struct vo_wayland_state {
     struct wl_display       *display;
     struct wl_registry      *registry;
     struct wl_shm           *shm;
+    struct wl_fixes         *fixes;
     struct wl_surface       *surface;
     struct wl_surface       *osd_surface;
     struct wl_subsurface    *osd_subsurface;
@@ -83,6 +84,7 @@ struct vo_wayland_state {
     bool state_change;
     bool tiled;
     bool toplevel_configured;
+    bool surface_configured;
     int display_fd;
     int mouse_x;
     int mouse_y;

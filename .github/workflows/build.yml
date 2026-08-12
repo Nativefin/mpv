@@ -52,14 +52,14 @@ jobs:
           - arch: x86_64
             wine: wine64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Get time
         id: get_time
         run: echo "timestamp=`date +%s%N`" >> $GITHUB_OUTPUT
 
       - name: Restore cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ${{ env.TARGET }}-${{ steps.get_time.outputs.timestamp }}
@@ -123,7 +123,7 @@ jobs:
           path: artifact/*
 
       - name: Save Cache
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         if: always()
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -157,7 +157,7 @@ jobs:
           git config --global core.autocrlf false
           git config --global core.eol lf
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Get time
         id: get_time
@@ -165,7 +165,7 @@ jobs:
           "timestamp=$((Get-Date).Ticks)" >> $env:GITHUB_OUTPUT
 
       - name: Restore cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ${{ matrix.target }}-${{ steps.get_time.outputs.timestamp }}
@@ -261,7 +261,7 @@ jobs:
             build/mpv.pdb
 
       - name: Save Cache
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         if: always()
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -285,7 +285,7 @@ jobs:
             swift: "-target arm64-apple-macosx10.15"
             target: "10.15"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Remove stray upstream python binary symlinks under /usr/local
         run: |
@@ -381,7 +381,7 @@ jobs:
             ld: "lld"
             args: "-Db_lto=true -Db_lto_mode=thin"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Build with meson
         id: build
@@ -411,7 +411,7 @@ jobs:
         CC: "clang"
         CXX: "clang++"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Build with meson
         id: build
@@ -434,7 +434,7 @@ jobs:
       # Musl support is an added bonus.
       image: alpine:3.21
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install dependencies
         run: |
           apk update
@@ -486,9 +486,9 @@ jobs:
     runs-on: ubuntu-latest # until https://github.com/actions/runner/issues/385
     timeout-minutes: 15 # avoid any weirdness with the VM
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Test in OpenBSD VM
-      uses: cross-platform-actions/action@v1.1.0
+      uses: cross-platform-actions/action@v1.3.0
       with:
         operating_system: openbsd
         version: '7.8'
@@ -533,12 +533,12 @@ jobs:
     runs-on: ubuntu-latest # until https://github.com/actions/runner/issues/385
     timeout-minutes: 15 # avoid any weirdness with the VM
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Test in FreeBSD VM
-      uses: cross-platform-actions/action@v1.1.0
+      uses: cross-platform-actions/action@v1.3.0
       with:
         operating_system: freebsd
-        version: '15.0'
+        version: '15.1'
         run: |
             sudo pkg update
             sudo pkg install -y \
@@ -617,7 +617,7 @@ jobs:
         run: |
           git config --global core.autocrlf false
           git config --global core.eol lf
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.sys }}
@@ -691,7 +691,7 @@ jobs:
       group: publish-git
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
