@@ -106,6 +106,10 @@ struct mp_decoder_fns {
 extern const struct mp_decoder_fns vd_lavc;
 extern const struct mp_decoder_fns ad_lavc;
 extern const struct mp_decoder_fns ad_spdif;
+#if IS_LG_WEBOS
+extern const struct mp_decoder_fns vd_webos_starfish;
+extern const struct mp_decoder_fns ad_webos_starfish;
+#endif
 
 // Convenience wrapper for lavc based decoders. Treat lavc_state as private;
 // init to all-0 on init and resets.

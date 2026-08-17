@@ -40,6 +40,9 @@
 #include "common/global.h"
 #include "common/recorder.h"
 #include "misc/dispatch.h"
+#if IS_LG_WEBOS
+#include "misc/starfish_bridge.h"
+#endif
 
 #include "audio/aframe.h"
 #include "video/out/vo.h"
@@ -418,6 +421,17 @@ struct mp_decoder_list *audio_decoder_list(void)
     return list;
 }
 
+#if IS_LG_WEBOS
+// mp_filter_wakeup() itself is declared in filters/filter_internal.h, which
+// is plain C but not something starfish_bridge.cpp (compiled as C++) should
+// need to include -- see the design note at the top of starfish_bridge.h.
+// This is the one place that actually calls it, on the bridge's behalf.
+static void starfish_wakeup_trampoline(void *filter)
+{
+    mp_filter_wakeup(filter);
+}
+#endif
+
 static bool reinit_decoder(struct priv *p)
 {
     if (p->decoder)
@@ -426,6 +440,13 @@ static bool reinit_decoder(struct priv *p)
 
     reset_decoder(p);
     p->has_broken_packet_pts = -10; // needs 10 packets to reach decision
+
+#if IS_LG_WEBOS
+    // Cheap and idempotent; simplest to just make sure it's set before any
+    // webOS Starfish decoder could possibly be created below, rather than
+    // threading a one-time-init flag through mpv's own startup sequence.
+    starfish_bridge_set_wakeup_fn(starfish_wakeup_trampoline);
+#endif
 
     const struct mp_decoder_fns *driver = NULL;
     struct mp_decoder_list *list = NULL;
@@ -436,10 +457,20 @@ static bool reinit_decoder(struct priv *p)
         driver = &vd_lavc;
         user_list = p->opts->video_decoders;
         fallback = "h264";
+
+#if IS_LG_WEBOS
+        if (starfish_bridge_video_codec_supported(p->codec->codec))
+            driver = &vd_webos_starfish;
+#endif
     } else if (p->codec->type == STREAM_AUDIO) {
         driver = &ad_lavc;
         user_list = p->opts->audio_decoders;
         fallback = "aac";
+
+#if IS_LG_WEBOS
+        if (starfish_bridge_audio_codec_supported(p->codec->codec))
+            driver = &ad_webos_starfish;
+#endif
 
         mp_mutex_lock(&p->cache_lock);
         bool try_spdif = p->try_spdif;

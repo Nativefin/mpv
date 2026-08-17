@@ -1,5 +1,5 @@
 project('mpv',
-        'c',
+        'c', 'cpp',
         license: ['GPL2+', 'LGPL2.1+'],
         license_files: ['LICENSE.GPL', 'LICENSE.LGPL', 'Copyright'],
         version: files('./MPV_VERSION'),
@@ -283,6 +283,7 @@ sources = files(
 
 # compiler stuff
 cc = meson.get_compiler('c')
+cxx = meson.get_compiler('cpp')
 
 flags = ['-D_FILE_OFFSET_BITS=64']
 flags_c = []
@@ -1375,6 +1376,24 @@ endif
 if features['d3d11'] or features['egl-angle-win32'] or (features['vulkan'] and win32)
     sources += files('video/out/gpu/d3d11_helpers.c')
     features += {'dxgi-debug-d3d11': cc.has_header_symbol('d3d11sdklayers.h', 'DXGI_DEBUG_D3D11')}
+endif
+
+if host_machine.subsystem() == 'lg-webos'
+    nlohmann_json = dependency('nlohmann_json', required: true)
+    boost_dep = dependency('boost', required: true)
+    playerAPIs = dependency('libplayerAPIs', required: true)
+    playerFactory = dependency('libpf-1.0', required: true)
+
+
+    sources += files('misc/starfish_bridge.cpp',
+                     'misc/starfish_bridge.h',
+                     'video/decode/vd_webos_starfish.c',
+                     'audio/decode/ad_webos_starfish.c')
+
+    dependencies += [nlohmann_json, boost_dep, playerAPIs, playerFactory]
+
+    add_project_arguments('-DIS_LG_WEBOS=1', language: 'c')
+    add_project_link_arguments('-static-libgcc', '-static-libstdc++', language: 'cpp')
 endif
 
 # hwaccel

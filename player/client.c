@@ -33,6 +33,9 @@
 #include "misc/node.h"
 #include "misc/rendezvous.h"
 #include "misc/thread_tools.h"
+#if IS_LG_WEBOS
+#include "misc/starfish_bridge.h"
+#endif
 #include "options/m_config.h"
 #include "options/m_option.h"
 #include "options/m_property.h"
@@ -1942,6 +1945,36 @@ int mpv_get_wakeup_pipe(mpv_handle *ctx)
     mp_mutex_unlock(&ctx->wakeup_lock);
     return fd;
 }
+
+#if IS_LG_WEBOS
+void mpv_starfish_bridge_begin_session(const char* app_id, const char* window_id) {
+    starfish_bridge_begin_session(app_id, window_id);
+}
+
+void mpv_starfish_bridge_end_session(void) {
+    starfish_bridge_end_session();
+}
+
+void mpv_starfish_bridge_set_paused(bool paused) {
+    starfish_bridge_set_paused(paused);
+}
+
+bool mpv_starfish_bridge_is_loaded(void) {
+    return starfish_bridge_is_loaded();
+}
+
+bool mpv_starfish_bridge_has_ended(void) {
+    return starfish_bridge_has_ended();
+}
+
+int64_t mpv_starfish_bridge_get_position_ns(void) {
+    return starfish_bridge_get_position_ns();
+}
+
+const char* mpv_starfish_bridge_get_last_error(void) {
+    return starfish_bridge_get_last_error();
+}
+#endif
 
 unsigned long mpv_client_api_version(void)
 {
