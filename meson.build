@@ -1384,13 +1384,22 @@ if host_machine.subsystem() == 'lg-webos'
     playerAPIs = dependency('libplayerAPIs', required: true)
     playerFactory = dependency('libpf-1.0', required: true)
 
+    dav1d = dependency('dav1d', required: true)
+    harfbuzz = dependency('harfbuzz', required: true)
+    fribidi = dependency('fribidi', required: true)
+    fontconfig = dependency('fontconfig', required: true)
+    bz2 = declare_dependency(
+        dependencies: cc.find_library('libbz2'),
+    )
+    unwind = dependency('libunwind', required: true)
+
 
     sources += files('misc/starfish_bridge.cpp',
                      'misc/starfish_bridge.h',
                      'video/decode/vd_webos_starfish.c',
                      'audio/decode/ad_webos_starfish.c')
 
-    dependencies += [nlohmann_json, boost_dep, playerAPIs, playerFactory]
+    dependencies += [nlohmann_json, boost_dep, playerAPIs, playerFactory, dav1d, harfbuzz, fribidi, fontconfig, bz2, unwind]
 
     add_project_arguments('-DIS_LG_WEBOS=1', language: 'c')
     add_project_link_arguments('-static-libgcc', '-static-libstdc++', language: 'cpp')
