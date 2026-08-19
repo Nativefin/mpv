@@ -13,6 +13,17 @@
  * pts so mpv's own EOF/stats/AV-sync bookkeeping has something to observe,
  * but no real audio. The intended AO is --ao=null; nothing downstream of
  * this filter is ever meant to actually play anything.
+ *
+ * init() deliberately does not require codec->lav_codecpar. Its own doc
+ * comment in demux/stheader.h says it's only "set by demux_{lavf,mkv,raw}",
+ * and on-device testing found it reliably NULL here regardless of demuxer --
+ * every mp_codec_params field this actually needs (codec name, channels,
+ * samplerate, extradata) is populated unconditionally by the demuxer
+ * instead, so that's what's used. Only the numeric codec profile (used to
+ * refine AC3/EAC3-Atmos and DTS-ES/DTS-HD-MA-X into their more specific
+ * Starfish codec strings -- see starfish_bridge.cpp) has no equivalent
+ * outside lav_codecpar, so that one field is read opportunistically and
+ * left at 0 (no refinement) if it isn't there.
  */
 
 #include <libavcodec/avcodec.h>
@@ -113,11 +124,31 @@ static bool init(struct mp_filter *ad, struct mp_codec_params *codec)
 {
     struct priv *p = ad->priv;
 
-    const AVCodecParameters *par = codec->lav_codecpar;
-    if (!par) {
-        MP_ERR(ad, "No codec parameters available\n");
+    // Deliberately not requiring codec->lav_codecpar here (see the file
+    // header comment) -- mp_codec_params carries everything Load() needs
+    // for audio directly, unconditionally populated by every demuxer, not
+    // gated behind FFmpeg-parameter conversion the way lav_codecpar is.
+    const int av_codec_id = mp_codec_to_av_codec_id(codec->codec);
+    if (av_codec_id == AV_CODEC_ID_NONE) {
+        MP_ERR(ad, "Could not map codec '%s' to an AVCodecID\n",
+               codec->codec ? codec->codec : "(null)");
         return false;
     }
+
+    const int channels = codec->channels.num;
+    const int sample_rate = codec->samplerate;
+    if (channels <= 0 || sample_rate <= 0) {
+        MP_ERR(ad, "No usable audio format info\n");
+        return false;
+    }
+
+    // profile has no equivalent on mp_codec_params (codec_profile there is
+    // a display string, not the numeric AV_PROFILE_* value StarfishBridge
+    // matches against) -- opportunistic only. Fine if lav_codecpar isn't
+    // available: it only gates a codec-string refinement (Atmos channel
+    // bump, DTSE/DTSX) in BuildAudioContentsLocked, not whether audio works
+    // at all -- see starfish_bridge.cpp.
+    const int profile = codec->lav_codecpar ? codec->lav_codecpar->profile : 0;
 
     p->dummy_fmt = mp_aframe_create();
     mp_aframe_set_format(p->dummy_fmt, AF_FORMAT_S16);
@@ -132,8 +163,8 @@ static bool init(struct mp_filter *ad, struct mp_codec_params *codec)
     mp_aframe_set_silence(p->dummy_fmt, 0, 1);
     talloc_steal(p, p->dummy_fmt);
 
-    starfish_bridge_register_audio(par->codec_id, par->ch_layout.nb_channels, par->sample_rate,
-                                   par->extradata, par->extradata_size, par->profile);
+    starfish_bridge_register_audio(av_codec_id, channels, sample_rate, codec->extradata,
+                                   codec->extradata_size, profile);
     starfish_bridge_register_audio_filter(ad);
 
     return true;

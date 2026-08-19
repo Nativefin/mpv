@@ -21,6 +21,16 @@
  * before Starfish will accept them (matching what every other known-working
  * Starfish integration does); VP8/VP9/AV1 are fed as demuxed, no conversion.
  *
+ * init() below deliberately does not require codec->lav_codecpar except
+ * inside the H264/HEVC branch, where it's genuinely unavoidable (needed by
+ * av_bsf_init). Its own doc comment in demux/stheader.h says it's only "set
+ * by demux_{lavf,mkv,raw}", and on-device testing found it unreliably
+ * populated here regardless of demuxer -- intermittently null even for
+ * files that worked moments before. Codec ID and display dimensions come
+ * from mp_codec_params' own fields instead, which the demuxer populates
+ * unconditionally as basic track info, not gated behind FFmpeg-parameter
+ * conversion the way lav_codecpar is.
+ *
  * Ownership note for the two send paths below, since it's the one thing in
  * this file that's easy to get wrong: for the bitstream-filtered path, the
  * incoming demux_packet is kept alive until *after* the av_bsf_receive_packet
@@ -269,22 +279,42 @@ static bool init(struct mp_filter *vd, struct mp_codec_params *codec)
 {
     struct priv *p = vd->priv;
 
-    const AVCodecParameters *par = codec->lav_codecpar;
-    if (!par) {
-        MP_ERR(vd, "No codec parameters available\n");
+    // Deliberately not requiring codec->lav_codecpar up front here (see the
+    // file header comment) -- codec ID and dimensions come from
+    // mp_codec_params' own fields, which don't depend on it. It's only
+    // actually needed below, and only for H264/HEVC specifically.
+    const int av_codec_id = mp_codec_to_av_codec_id(codec->codec);
+    if (av_codec_id == AV_CODEC_ID_NONE) {
+        MP_ERR(vd, "Could not map codec '%s' to an AVCodecID\n",
+               codec->codec ? codec->codec : "(null)");
         return false;
     }
-    if (par->width <= 0 || par->height <= 0) {
+
+    const int width = codec->disp_w;
+    const int height = codec->disp_h;
+    if (width <= 0 || height <= 0) {
         MP_ERR(vd, "No usable video dimensions\n");
         return false;
     }
 
-    if (par->codec_id == AV_CODEC_ID_H264 || par->codec_id == AV_CODEC_ID_HEVC) {
+    if (av_codec_id == AV_CODEC_ID_H264 || av_codec_id == AV_CODEC_ID_HEVC) {
+        // mp4toannexb needs a real AVCodecParameters -- to know whether the
+        // source is already Annex B or length-prefixed (avcC/hvcC) and to
+        // seed the NAL length size from it. Unlike codec ID/dimensions
+        // above, there's no equivalent on mp_codec_params to fall back to;
+        // if this is null here, that's what to chase (a demuxer/timing
+        // issue, not something else feedable around the way the other
+        // fields were).
+        if (!codec->lav_codecpar) {
+            MP_ERR(vd, "No AVCodecParameters available for bitstream filtering\n");
+            return false;
+        }
+
         const char *bsf_name =
-            par->codec_id == AV_CODEC_ID_H264 ? "h264_mp4toannexb" : "hevc_mp4toannexb";
+            av_codec_id == AV_CODEC_ID_H264 ? "h264_mp4toannexb" : "hevc_mp4toannexb";
         const AVBitStreamFilter *bsf = av_bsf_get_by_name(bsf_name);
         if (!bsf || av_bsf_alloc(bsf, &p->bsf) < 0 ||
-            avcodec_parameters_copy(p->bsf->par_in, par) < 0)
+            avcodec_parameters_copy(p->bsf->par_in, codec->lav_codecpar) < 0)
         {
             MP_ERR(vd, "Failed to set up bitstream filter '%s'\n", bsf_name);
             return false;
@@ -305,8 +335,7 @@ static bool init(struct mp_filter *vd, struct mp_codec_params *codec)
     }
     talloc_steal(p, p->dummy_img);
 
-    starfish_bridge_register_video(par->codec_id, par->width, par->height, codec->fps,
-                                   codec->reliable_fps);
+    starfish_bridge_register_video(av_codec_id, width, height, codec->fps, codec->reliable_fps);
     starfish_bridge_register_video_filter(vd);
 
     return true;
@@ -318,8 +347,6 @@ static struct mp_decoder *create(struct mp_filter *parent, struct mp_codec_param
     struct mp_filter *vd = mp_filter_create(parent, &vd_webos_starfish_filter);
     if (!vd)
         return NULL;
-
-    MP_INFO(vd, "Creating starfish decoder!\n");
 
     mp_filter_add_pin(vd, MP_PIN_IN, "in");
     mp_filter_add_pin(vd, MP_PIN_OUT, "out");
