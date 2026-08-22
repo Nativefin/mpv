@@ -1,6 +1,5 @@
 #include "starfish_bridge.h"
 
-#include <algorithm>
 #include <atomic>
 #include <cinttypes>
 #include <condition_variable>
@@ -102,24 +101,7 @@ bool NameInSet(const char* name, std::initializer_list<const char*> set)
 }
 
 constexpr int64_t kMaxFeedAheadNs = 1'600'000'000; // 1.6s, see prior art throughout this project
-// How long the video decoder's create() will wait for an audio decoder to
-// also register before committing to a Load() without one. mpv creates the
-// two decoders independently, with no ordering guarantee this bridge can
-// rely on -- on-device testing found the actual gap between them
-// consistently wider than the 500ms this was originally set to, which
-// silently produced a video-only Load() for files that do have audio (no
-// error anywhere: ad_webos_starfish still initializes and "successfully"
-// feeds Starfish an ES type Load() never declared, which is presumably why
-// nothing audible came out despite no errors being logged). This is a
-// blunter fix than tracking down mpv's actual track-init ordering/timing
-// would be -- it costs real startup latency on genuinely video-only files --
-// but it doesn't require changing the app-integration contract again, which
-// has already changed twice this session. If audio is still intermittently
-// missing at this value, that's the signal this heuristic isn't enough and
-// it's worth the more invasive fix (see the header comment on
-// register_video for the alternative: have the app call a new "commit"
-// function from MPV_EVENT_FILE_LOADED instead of guessing here at all).
-constexpr auto kAudioRegisterWait = std::chrono::milliseconds(3000);
+constexpr auto kAudioRegisterWait = std::chrono::milliseconds(500);
 constexpr auto kUnloadWait = std::chrono::seconds(1);
 constexpr auto kPacerInterval = std::chrono::milliseconds(10);
 
@@ -223,14 +205,11 @@ struct AudioInfo
 };
 
 std::recursive_mutex g_mutex; // recursive: see the comment above BuildAndSendLoadLocked's Load() call
-std::condition_variable_any g_cv; // _any: g_mutex is a recursive_mutex, and
-                                  // plain std::condition_variable only works
-                                  // with std::unique_lock<std::mutex>
+std::condition_variable_any g_cv;
 
 std::unique_ptr<StarfishMediaAPIs> g_api;
 std::string g_appId;
 std::string g_windowId;
-int g_platformCode{-1};
 bool g_sessionActive = false;
 
 bool g_hasVideo = false;
@@ -247,21 +226,6 @@ bool g_ended = false;
 std::atomic<int64_t> g_currentPtsNs{0};
 std::atomic<int64_t> g_fedVideoPtsNs{-1};
 std::atomic<int64_t> g_fedAudioPtsNs{-1};
-
-// mpv reports pts as an absolute, container-native timestamp (whatever the
-// demuxer says the first frame's pts is -- rarely exactly 0 for a real
-// file). The Load() payload always declares ptsToDecode: 0, so every fed
-// timestamp needs to be rebased against wherever this session's video
-// actually starts, or Starfish's internal clock believes playback hasn't
-// reached "now" yet until wall-clock time catches up to that gap -- visible
-// as a stall on the first frame(s) followed by a rapid catch-up. Established
-// once, from the first video unit fed after Load() (audio waits for it --
-// see FeedLocked -- so both lanes share one offset and stay in sync with
-// each other), and held fixed for the rest of the session: seeks reuse it
-// (see starfish_bridge_prime_after_seek) rather than re-deriving it, since
-// Recipe A never re-Loads.
-bool g_havePtsOffset = false;
-int64_t g_ptsOffsetNs = 0;
 
 bool g_flushInFlight = false;   // guards against double flush() if both
                                 // decoders' .reset fire for the same seek
@@ -411,7 +375,7 @@ void BuildAudioContentsLocked(nlohmann::json& contents)
 // caller's problem via starfish_bridge_is_loaded()/get_last_error().
 bool BuildAndSendLoadLocked();
 
-void TryBeginLoadLocked(std::unique_lock<std::recursive_mutex>& lock)
+void TryBeginLoadLocked(std::unique_lock<std::recursive_mutex> &lock)
 {
   if (g_loadTriggered || !g_hasVideo)
     return;
@@ -452,24 +416,13 @@ bool BuildAndSendLoadLocked()
   // StarfishMediaVideoPlayer.cpp -- some StarfishMediaAPIs.h revisions carry
   // both the by-value and const-ref overloads active at once, which is
   // otherwise ambiguous.
-  if (g_platformCode >= 11) {
-    if (static_cast<bool (*)(const std::string&, int32_t*, int32_t*, int32_t*)>(
-            &smp::util::getMaxVideoResolution)(videoCodec, &maxW, &maxH, &maxFr))
-    {
-      p["option"]["adaptiveStreaming"]["adaptiveResolution"] = true;
-      p["option"]["adaptiveStreaming"]["maxWidth"] = maxW;
-      p["option"]["adaptiveStreaming"]["maxHeight"] = maxH;
-      p["option"]["adaptiveStreaming"]["maxFrameRate"] = maxFr;
-    }
-  } else {
-    if (static_cast<bool (*)(std::string, int32_t*, int32_t*, int32_t*)>(
-            &smp::util::getMaxVideoResolution)(videoCodec, &maxW, &maxH, &maxFr))
-    {
-      p["option"]["adaptiveStreaming"]["adaptiveResolution"] = true;
-      p["option"]["adaptiveStreaming"]["maxWidth"] = maxW;
-      p["option"]["adaptiveStreaming"]["maxHeight"] = maxH;
-      p["option"]["adaptiveStreaming"]["maxFrameRate"] = maxFr;
-    }
+  if (static_cast<bool (*)(std::string, int32_t*, int32_t*, int32_t*)>(
+          &smp::util::getMaxVideoResolution)(videoCodec, &maxW, &maxH, &maxFr))
+  {
+    p["option"]["adaptiveStreaming"]["adaptiveResolution"] = true;
+    p["option"]["adaptiveStreaming"]["maxWidth"] = maxW;
+    p["option"]["adaptiveStreaming"]["maxHeight"] = maxH;
+    p["option"]["adaptiveStreaming"]["maxFrameRate"] = maxFr;
   }
 
   p["option"]["externalStreamingInfo"]["streamQualityInfo"] = true;
@@ -607,29 +560,6 @@ enum starfish_feed_result FeedLocked(const uint8_t* data, int size, int64_t ptsN
   if (ptsNs < 0)
     return STARFISH_FEED_DROP;
 
-  if (esData == 1) // video: establishes the offset every other lane waits on
-  {
-    if (!g_havePtsOffset)
-    {
-      g_ptsOffsetNs = ptsNs;
-      g_havePtsOffset = true;
-    }
-  }
-  else if (!g_havePtsOffset)
-  {
-    // Audio arrived before any video has been fed yet this session -- wait
-    // for video to establish the shared offset rather than guessing at our
-    // own, so both lanes end up on the same rebased timeline. Shouldn't
-    // wait long: the demux/feed path pulls video first when both are ready
-    // (see the video-establishes-it comment above), so this only matters
-    // for the first handful of packets right after LOADCOMPLETED.
-    return STARFISH_FEED_RETRY;
-  }
-
-  const int64_t rebasedPtsNs = ptsNs - g_ptsOffsetNs;
-  if (rebasedPtsNs < 0)
-    return STARFISH_FEED_DROP; // pre-roll before our chosen start point
-
   if (g_started)
   {
     const int64_t fed = fedPtsNs.load();
@@ -643,14 +573,14 @@ enum starfish_feed_result FeedLocked(const uint8_t* data, int size, int64_t ptsN
   nlohmann::json j;
   j["bufferAddr"] = addrBuf;
   j["bufferSize"] = size;
-  j["pts"] = rebasedPtsNs;
+  j["pts"] = ptsNs;
   j["esData"] = esData;
 
   const std::string result = g_api->Feed(j.dump().c_str());
 
   if (result.find("Ok") != std::string::npos)
   {
-    fedPtsNs = rebasedPtsNs;
+    fedPtsNs = ptsNs;
     return STARFISH_FEED_OK;
   }
   if (result.find("BufferFull") != std::string::npos)
@@ -689,13 +619,12 @@ void starfish_bridge_set_wakeup_fn(starfish_wakeup_fn fn)
   g_wakeupFn = fn;
 }
 
-void starfish_bridge_begin_session(const char* app_id, const char* window_id, int platformCode)
+void starfish_bridge_begin_session(const char* app_id, const char* window_id)
 {
   std::lock_guard lock(g_mutex);
 
   g_appId = app_id ? app_id : "";
   g_windowId = window_id ? window_id : "";
-  g_platformCode = platformCode;
 
   g_hasVideo = g_hasAudio = g_audioWaitDone = g_loadTriggered = false;
   g_videoInfo = VideoInfo{};
@@ -705,9 +634,6 @@ void starfish_bridge_begin_session(const char* app_id, const char* window_id, in
   g_currentPtsNs = 0;
   g_fedVideoPtsNs = -1;
   g_fedAudioPtsNs = -1;
-
-  g_havePtsOffset = false;
-  g_ptsOffsetNs = 0;
 
   g_flushInFlight = false;
   g_needsTimeToDecode = false; // the fresh Load()'s ptsToDecode=0 covers the first frame, not this
@@ -727,29 +653,6 @@ void starfish_bridge_begin_session(const char* app_id, const char* window_id, in
   g_pacerThread = std::thread(PacerLoop);
 }
 
-void starfish_bridge_prepare_shutdown(void)
-{
-  // Must run *before* the caller destroys mpv (mpv_terminate_destroy() or
-  // equivalent) -- not after, and not merged into end_session(). The pacer
-  // thread calls mp_filter_wakeup() on whatever's currently registered on
-  // its own ~10ms timer, independent of anything mpv itself is doing. If
-  // it's still running while mpv is in the middle of tearing down the
-  // filter graph, it can call into mpv (or into a filter mpv is actively
-  // destroying) during that exact window -- this is what caused quit to
-  // hang whenever a filter had actually been registered (i.e. whenever
-  // video was working). Stopping the pacer here, before mpv teardown even
-  // starts, means there's nothing left calling mp_filter_wakeup() by the
-  // time mpv gets there -- destroy()/unregister_*_filter() then complete
-  // immediately (g_video/audioWakeupInFlight are already, and stay, 0).
-  //
-  // Safe to call even if playback never got this far (pacer not started,
-  // or already stopped) -- see the g_pacerRunning check below.
-  if (!g_pacerRunning.exchange(false))
-    return;
-  if (g_pacerThread.joinable())
-    g_pacerThread.join();
-}
-
 void starfish_bridge_end_session(void)
 {
   std::unique_lock lock(g_mutex);
@@ -757,12 +660,15 @@ void starfish_bridge_end_session(void)
     return;
   g_sessionActive = false;
 
-  // By the time the app calls this, mpv should already be fully destroyed
-  // (mpv_terminate_destroy() already returned) -- see
-  // starfish_bridge_prepare_shutdown(), which must have already run by now,
-  // and the ordering note on register_*_filter in the header. Both
-  // decoders' destroy() has already run and unregistered their filter
-  // pointers.
+  g_pacerRunning = false;
+  lock.unlock();
+  if (g_pacerThread.joinable())
+    g_pacerThread.join();
+  lock.lock();
+
+  // By the time the app calls this, mpv should already be fully stopped, so
+  // both decoders' destroy() has already run and unregistered their filter
+  // pointers -- see the ordering note on register_*_filter in the header.
   if (g_api && g_loaded)
   {
     if (!g_api->Unload())
@@ -930,18 +836,8 @@ void starfish_bridge_prime_after_seek(int64_t landed_pts_ns)
     return;
   g_needsTimeToDecode = false;
 
-  // Same rebasing as every Feed() call (see FeedLocked) -- landed_pts_ns is
-  // the raw pts of the first post-seek video unit, in mpv's absolute
-  // container timeline, not yet relative to where this session's decode-
-  // start gate was anchored. g_havePtsOffset should always be true by the
-  // time a seek can happen (you can't seek before playback started, and the
-  // offset is established on the very first video frame fed) -- the
-  // fallback below is defensive, not an expected path.
-  const int64_t offset = g_havePtsOffset ? g_ptsOffsetNs : 0;
-  const int64_t rebasedPositionNs = std::max<int64_t>(0, landed_pts_ns - offset);
-
   nlohmann::json timePayload;
-  timePayload["position"] = rebasedPositionNs;
+  timePayload["position"] = landed_pts_ns;
   if (!g_api->setTimeToDecode(timePayload.dump().c_str()))
     fprintf(stderr, "[StarfishBridge] setTimeToDecode() failed after seek\n");
 

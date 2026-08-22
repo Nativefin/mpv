@@ -1911,16 +1911,7 @@ MPV_EXPORT int mpv_get_wakeup_pipe(mpv_handle *ctx);
 // window's id, e.g. from SDL_webOSCreateExportedWindow) and before telling
 // libmpv to load a URL. Both strings are copied internally; you don't need
 // to keep them alive after this call returns.
-MPV_EXPORT void mpv_starfish_bridge_begin_session(const char* app_id, const char* window_id, int platformCode);
-
-// Call this FIRST when tearing down, before mpv_terminate_destroy() (or
-// whatever you use to destroy the mpv_handle) -- not after, and not instead
-// of starfish_bridge_end_session() below, both are required and in this
-// order. Stops the background retry-pacer thread, which otherwise keeps
-// calling into mpv's filter graph on its own timer independent of mpv's own
-// teardown -- letting it keep running during mpv's destruction is what
-// causes quitting to hang. Safe to call even if playback never started.
-MPV_EXPORT void mpv_starfish_bridge_prepare_shutdown(void);
+MPV_EXPORT void mpv_starfish_bridge_begin_session(const char* app_id, const char* window_id);
 
 // Call after libmpv has fully stopped/destroyed playback for this file (so
 // both decoder filters have already run their .destroy callback and
@@ -1940,8 +1931,6 @@ MPV_EXPORT int64_t mpv_starfish_bridge_get_position_ns(void);
 // Valid until the next bridge call on any thread. Copy it if you need it to
 // live longer.
 MPV_EXPORT const char* mpv_starfish_bridge_get_last_error(void);
-
-
 #endif
 
 /**
