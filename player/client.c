@@ -1947,8 +1947,8 @@ int mpv_get_wakeup_pipe(mpv_handle *ctx)
 }
 
 #if IS_LG_WEBOS
-void mpv_starfish_bridge_begin_session(const char* app_id, const char* window_id) {
-    starfish_bridge_begin_session(app_id, window_id);
+void mpv_starfish_bridge_begin_session(const char* app_id, const char* window_id, int platform_id) {
+    starfish_bridge_begin_session(app_id, window_id, platform_id);
 }
 
 void mpv_starfish_bridge_end_session(void) {

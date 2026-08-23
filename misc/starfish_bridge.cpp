@@ -210,6 +210,7 @@ std::condition_variable_any g_cv;
 std::unique_ptr<StarfishMediaAPIs> g_api;
 std::string g_appId;
 std::string g_windowId;
+int g_platformId{-1};
 bool g_sessionActive = false;
 
 bool g_hasVideo = false;
@@ -416,13 +417,24 @@ bool BuildAndSendLoadLocked()
   // StarfishMediaVideoPlayer.cpp -- some StarfishMediaAPIs.h revisions carry
   // both the by-value and const-ref overloads active at once, which is
   // otherwise ambiguous.
-  if (static_cast<bool (*)(std::string, int32_t*, int32_t*, int32_t*)>(
-          &smp::util::getMaxVideoResolution)(videoCodec, &maxW, &maxH, &maxFr))
-  {
-    p["option"]["adaptiveStreaming"]["adaptiveResolution"] = true;
-    p["option"]["adaptiveStreaming"]["maxWidth"] = maxW;
-    p["option"]["adaptiveStreaming"]["maxHeight"] = maxH;
-    p["option"]["adaptiveStreaming"]["maxFrameRate"] = maxFr;
+  if (g_platformId >= 11) {
+    if (static_cast<bool (*)(const std::string&, int32_t*, int32_t*, int32_t*)>(
+            &smp::util::getMaxVideoResolution)(videoCodec, &maxW, &maxH, &maxFr))
+    {
+      p["option"]["adaptiveStreaming"]["adaptiveResolution"] = true;
+      p["option"]["adaptiveStreaming"]["maxWidth"] = maxW;
+      p["option"]["adaptiveStreaming"]["maxHeight"] = maxH;
+      p["option"]["adaptiveStreaming"]["maxFrameRate"] = maxFr;
+    }
+  } else {
+    if (static_cast<bool (*)(std::string, int32_t*, int32_t*, int32_t*)>(
+            &smp::util::getMaxVideoResolution)(videoCodec, &maxW, &maxH, &maxFr))
+    {
+      p["option"]["adaptiveStreaming"]["adaptiveResolution"] = true;
+      p["option"]["adaptiveStreaming"]["maxWidth"] = maxW;
+      p["option"]["adaptiveStreaming"]["maxHeight"] = maxH;
+      p["option"]["adaptiveStreaming"]["maxFrameRate"] = maxFr;
+    }
   }
 
   p["option"]["externalStreamingInfo"]["streamQualityInfo"] = true;
@@ -619,12 +631,13 @@ void starfish_bridge_set_wakeup_fn(starfish_wakeup_fn fn)
   g_wakeupFn = fn;
 }
 
-void starfish_bridge_begin_session(const char* app_id, const char* window_id)
+void starfish_bridge_begin_session(const char* app_id, const char* window_id, int platform_id)
 {
   std::lock_guard lock(g_mutex);
 
   g_appId = app_id ? app_id : "";
   g_windowId = window_id ? window_id : "";
+  g_platformId = platform_id;
 
   g_hasVideo = g_hasAudio = g_audioWaitDone = g_loadTriggered = false;
   g_videoInfo = VideoInfo{};

@@ -71,7 +71,7 @@ void starfish_bridge_set_wakeup_fn(starfish_wakeup_fn fn);
 // window's id, e.g. from SDL_webOSCreateExportedWindow) and before telling
 // libmpv to load a URL. Both strings are copied internally; you don't need
 // to keep them alive after this call returns.
-void starfish_bridge_begin_session(const char* app_id, const char* window_id);
+void starfish_bridge_begin_session(const char* app_id, const char* window_id, int platform_id);
 
 // Call after libmpv has fully stopped/destroyed playback for this file (so
 // both decoder filters have already run their .destroy callback and

@@ -1911,7 +1911,7 @@ MPV_EXPORT int mpv_get_wakeup_pipe(mpv_handle *ctx);
 // window's id, e.g. from SDL_webOSCreateExportedWindow) and before telling
 // libmpv to load a URL. Both strings are copied internally; you don't need
 // to keep them alive after this call returns.
-MPV_EXPORT void mpv_starfish_bridge_begin_session(const char* app_id, const char* window_id);
+MPV_EXPORT void mpv_starfish_bridge_begin_session(const char* app_id, const char* window_id, int platform_id);
 
 // Call after libmpv has fully stopped/destroyed playback for this file (so
 // both decoder filters have already run their .destroy callback and
