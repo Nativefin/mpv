@@ -1399,7 +1399,7 @@ if host_machine.subsystem() == 'lg-webos'
                      'video/decode/vd_webos_starfish.c',
                      'audio/decode/ad_webos_starfish.c')
 
-    dependencies += [nlohmann_json, boost_dep, playerAPIs, playerFactory, dav1d, harfbuzz, fribidi, fontconfig, bz2, unwind]
+    dependencies += [boost_dep, playerAPIs, playerFactory, dav1d, harfbuzz, fribidi, fontconfig, bz2, unwind]
 
     add_project_arguments('-DIS_LG_WEBOS=1', language: 'c')
     add_project_link_arguments('-static-libgcc', '-static-libstdc++', language: 'cpp')
