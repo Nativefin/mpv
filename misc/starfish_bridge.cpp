@@ -13,7 +13,7 @@
 #include <thread>
 #include <vector>
 
-#include <nlohmann/json.hpp>
+#include "json.hpp"
 
 #include <starfish-media-pipeline/StarfishMediaAPIs.h>
 

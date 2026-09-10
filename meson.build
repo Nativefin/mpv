@@ -1379,7 +1379,6 @@ if features['d3d11'] or features['egl-angle-win32'] or (features['vulkan'] and w
 endif
 
 if host_machine.subsystem() == 'lg-webos'
-    nlohmann_json = dependency('nlohmann_json', required: true)
     boost_dep = dependency('boost', required: true)
     playerAPIs = dependency('libplayerAPIs', required: true)
     playerFactory = dependency('libpf-1.0', required: true)
@@ -1396,6 +1395,7 @@ if host_machine.subsystem() == 'lg-webos'
 
     sources += files('misc/starfish_bridge.cpp',
                      'misc/starfish_bridge.h',
+                     'misc/json.hpp',
                      'video/decode/vd_webos_starfish.c',
                      'audio/decode/ad_webos_starfish.c')
 
